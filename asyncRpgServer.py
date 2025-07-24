@@ -1,5 +1,8 @@
 import asyncio
 import random
+from player import Player
+from serverHandler import client_init, handle_disconnect
+from playerUtil import get_unused_classes
 
 # Maximum number of players in the game
 MAX_PLAYERS = 4
@@ -18,33 +21,6 @@ AI_NAMES = ["AI_Setro", "AI_Firion", "AI_Refia", "AI_Cecil", "AI_Bartz","AI_Terr
 HOST_ADDR = '127.0.0.1'
 PORT = 8888
 
-# Represents a player or AI participant in the game
-class Player:
-    def __init__(self, name, writer, is_ai=False):
-        self.name = name                      # Player's name
-        self.class_name = None               # Chosen class name
-        self.stats = {}                      # Stats derived from class
-        self.ready = False                   # Readiness for battle
-        self.writer = writer                 # Writer stream to communicate with client
-        self.is_host = False                 # Host flag
-        self.is_ai = is_ai                   # AI player flag
-
-    def set_class(self, class_name):
-        # Set player's class and corresponding stats
-        if class_name in CLASS_STATS:
-            self.class_name = class_name
-            self.stats = CLASS_STATS[class_name]
-
-    def to_dict(self):
-        # Return player data as a dictionary
-        return {
-            "name": self.name,
-            "class": self.class_name,
-            "ready": self.ready,
-            "is_host": self.is_host,
-            "is_ai": self.is_ai
-        }
-
 # The main RPG server handling players, lobby, and game state
 class RPGServer:
     def __init__(self):
@@ -59,54 +35,12 @@ class RPGServer:
         async with self.server:
             await self.server.serve_forever()
 
-    def get_unused_classes(self):
-        # Return class options that haven't been taken yet
-        return [cls for cls in CLASS_STATS if cls not in [p.class_name for p in self.players if p.class_name]]
-
     async def handle_client(self, reader, writer):
         # Handle a new player connection
         addr = writer.get_extra_info('peername')
         # Init temp player object
         player = None
-
-        try:
-            writer.write(b"Enter your name: \n")
-            await writer.drain()
-            name = await asyncio.wait_for(reader.readline(), timeout=60.0)
-            name = name.decode().strip()
-
-            # Rejoining scenario
-            if name in self.disconnected_players:
-                player = self.disconnected_players.pop(name)
-                player.writer = writer
-                self.players = [p for p in self.players if p.name != name or p.is_ai]
-                self.players.append(player)
-                await self.send_to_all(f"{name} has rejoined the game.")
-            # Server is full, reject player connection
-            elif len([p for p in self.players if not p.is_ai]) == MAX_PLAYERS:
-                writer.write(b"Server full. Try again later.\n")
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
-                return
-            # Valid first Join, create instant of Player at address
-            else:
-                player = Player(name, writer)
-                #If server list of players is empty, init player as host player
-                if not self.players:
-                    player.is_host = True
-                    writer.write(b"You are the host.\n")
-                self.players.append(player)
-                await self.send_to_all(f"{name} has joined the lobby.")
-
-            await self.show_lobby()
-            await self.handle_player_session(player, reader)
-
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
-            print(f"Client {addr} disconnected or failed to respond.")
-        finally:
-            if player is not None:
-                await self.handle_disconnect(player)
+        client_init(self, reader, writer)
 
     async def handle_player_session(self, player, reader):
         # Handle input commands from a player
@@ -151,36 +85,7 @@ class RPGServer:
                     writer.write(b"Unknown command. Type /ready or /start (host only).\n")
                     await writer.drain()
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
-            await self.handle_disconnect(player)
-
-    async def handle_disconnect(self, player):
-        # Handle player disconnection and substitution with AI
-        # TODO: Extend to maintain expected functionality if player disconnects mid combat
-        if player in self.players:
-            self.players.remove(player)
-            await self.send_to_all(f"{player.name} has disconnected.")
-
-        self.disconnected_players[player.name] = player
-
-        # Create new AI using existing player class
-        # FIXME: Make sure once extended for midcombat, AI char is not healed
-        if player.class_name:
-            ai_name = AI_NAMES.pop(0)
-            ai = Player(ai_name, None, is_ai=True)
-            ai.set_class(player.class_name)
-            ai.ready = True
-            self.players.append(ai)
-            await self.send_to_all(f"{ai.name} has replaced {player.name} as an AI.")
-
-        #Set next human player to be host
-        if player.is_host:
-            for p in self.players:
-                if not p.is_ai:
-                    p.is_host = True
-                    await self.send_to_all(f"{p.name} is now the host.")
-                    break
-
-        await self.show_lobby()
+            await handle_disconnect(self, player)
 
     def ready_to_start(self):
         return len(self.players) <= MAX_PLAYERS and all(p.ready for p in self.players)
@@ -190,10 +95,11 @@ class RPGServer:
         while len(self.players) < MAX_PLAYERS:
             name = AI_NAMES.pop(0)
             ai_player = Player(name, None, is_ai=True)
-            available_classes = self.get_unused_classes()
+            available_classes = get_unused_classes()
             ai_player.set_class(random.choice(available_classes))
             ai_player.ready = True
             self.players.append(ai_player)
+        await show_party(self)
 
         await self.send_to_all("\n--- Battle Started! ---\n")
         await asyncio.sleep(2)
