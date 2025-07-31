@@ -1,3 +1,59 @@
+import random
+from ff9StatusHandler import AttackMissedCall
+from ff9StatHandler import GetDmgStatByName, GetElementByName
+
+#TODO: Extend to consider trance factors
+def basicAttack(actor, target, isEnemyActor=False, isCertainCrit=False):
+
+    actorLevel = actor.level
+    actorAttackPower = actor.DmgStatMatrix[2][0]
+    targetDef = target.DmgStatMatrix[0][1]
+    actorStrength = actor.DmgStatMatrix[0][0]
+    actorSpirit = actor.DmgStatMatrix[2][1]
+    # Bound attackBonus within 1,x
+    # Iterative split used for enemy basic attacks
+    r = random.Random()
+    if(isEnemyActor):
+        attackBonusModifier = (((actorLevel + actorStrength) / 4) + 1)
+
+        attackBasal = actorAttackPower - targetDef
+        attackBonus = actorStrength + \
+            (r.randrange(0, r.getrandbits(32)) % attackBonusModifier)
+        if attackBasal > 0:
+            pass
+        else:
+            attackBasal = 1
+        attackConditionalMod = 1
+        attackConditionalMod += ReturnCriticalModifier(actorSpirit,r,isCertainCrit)
+        finalAttackDmg = attackBasal * attackBonus * attackConditionalMod
+        return finalAttackDmg
+    # Iterative split used for player basic attacks
+    else:
+        # TODO: Extend iteration branch to accomodate for all status affects which could modify attack values
+        if ("Mini" in actor.statusList):
+            return 1
+        if ("Airbone" not in target.statusList):
+            attackBonusModifier = (((actorLevel + actorStrength) / 8) + 1)
+            if actor.isInLimitState == 1:
+                attackBonusModifier *= 3
+            elif actor.baseJob == "Warrior":
+                attackBonusModifier *= 1.5
+
+            attackBasal = actorAttackPower - targetDef
+            attackBonus = actorStrength + \
+                (r.randrange(0, r.getrandbits(32)) % attackBonusModifier)
+            if attackBasal > 0:
+                pass
+            else:
+                attackBasal = 1
+            attackConditionalMod = 1
+            attackConditionalMod += ReturnCriticalModifier(actorSpirit,r,isCertainCrit)
+            # All other conditional damage modifiers should be applied before critical
+            finalAttackDmg = attackBasal * attackBonus * attackConditionalMod
+            return finalAttackDmg
+        else:
+        # TODO: Alter return statement to return tuple of 0 and status causing immunity
+            AttackMissedCall(actor,None,target)
 
 # Function used to determine if a basic attack is a critical hit
 def ReturnCriticalModifier(spiritStat, randomizer = None, isCrit = False):

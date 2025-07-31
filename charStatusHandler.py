@@ -55,7 +55,7 @@ def PlayerDeathblowCallCheck(targetChar, instant = False):
             print(targetChar.Name, "was killed, instantly!")
         else:
             print(targetChar.Name, "has been knocked out")
-#All player chars will share this function usage
+
 def PlayerManaOutageCheck(targetChar):
     if targetChar.currentMP <= 0:
         targetChar.currentMP = 0

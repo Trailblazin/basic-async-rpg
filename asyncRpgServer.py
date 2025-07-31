@@ -1,11 +1,13 @@
 import asyncio
 import random
 from player import Player
-from serverHandler import client_init, handle_disconnect
+from serverHandler import client_init, handle_disconnect, show_lobby, show_party, battle_loop
 from playerUtil import get_unused_classes
 
 # Maximum number of players in the game
 MAX_PLAYERS = 4
+
+#TODO: Move to config class at least - use well formatted config file; GET RID OF THIS SHIT AND IT'S USAGE - USE JUST THE LIST OF NAMES BRO
 
 # Default class stats for each class
 CLASS_STATS = {
@@ -30,17 +32,17 @@ class RPGServer:
 
     async def start(self):
         # Start the asyncio server on localhost:8888
-        self.server = await asyncio.start_server(self.handle_client, HOST_ADDR , 8888)
+        self.server = await asyncio.start_server(self.handle_client_init, HOST_ADDR , 8888)
         print(f"Server running on {HOST_ADDR}:{PORT}")
         async with self.server:
             await self.server.serve_forever()
 
-    async def handle_client(self, reader, writer):
+    async def handle_client_init(self, reader, writer):
         # Handle a new player connection
         addr = writer.get_extra_info('peername')
         # Init temp player object
-        player = None
-        client_init(self, reader, writer)
+        player = Player(None,None)
+        await client_init(self, reader, writer,player)
 
     async def handle_player_session(self, player, reader):
         # Handle input commands from a player
@@ -63,7 +65,7 @@ class RPGServer:
                     writer.write(b"Invalid or already taken class. Try again: \n")
                 await writer.drain()
 
-            await self.show_lobby()
+            await show_lobby(self)
 
             while True:
                 line = await asyncio.wait_for(reader.readline(), timeout=180.0)
@@ -73,7 +75,7 @@ class RPGServer:
                 if msg == "/ready":
                     player.ready = True
                     await self.send_to_all(f"{player.name} is ready.")
-                    await self.show_lobby()
+                    await show_lobby(self)
                 elif msg == "/start" and player.is_host:
                     if self.ready_to_start():
                         await self.start_battle()
@@ -95,39 +97,27 @@ class RPGServer:
         while len(self.players) < MAX_PLAYERS:
             name = AI_NAMES.pop(0)
             ai_player = Player(name, None, is_ai=True)
-            available_classes = get_unused_classes()
+            available_classes = get_unused_classes(self.players)
             ai_player.set_class(random.choice(available_classes))
             ai_player.ready = True
             self.players.append(ai_player)
         await show_party(self)
-
-        await self.send_to_all("\n--- Battle Started! ---\n")
+        await self.send_to_all("\n--- Battle Starting! ---\n")
         await asyncio.sleep(2)
-        await self.send_to_all("[Battle phase placeholder]\n")
-        await asyncio.sleep(3)
+        await self.send_to_all("\n--- [Battle phase: Begins!] ---\n")
+        await battle_loop(self.players)
         await self.send_to_all("\nGame over! Returning to lobby...\n")
 
         #De-ready players and prepare to reset lobby
         for p in self.players:
             p.ready = False
             if not p.is_ai:
+                #TODO: Verify that stat reset is not needed
                 p.class_name = None
-                p.stats = {}
 
         self.players = [p for p in self.players if not p.is_ai]
         self.disconnected_players.clear()
-
-        await self.show_lobby()
-
-    async def show_lobby(self):
-        status = "\n--- Lobby ---\n"
-        for p in self.players:
-            role = "(Host)" if p.is_host else ""
-            bot = "[AI]" if p.is_ai else ""
-            cls = p.class_name if p.class_name else "(no class)"
-            ready = "✓" if p.ready else "✗"
-            status += f"{p.name} {bot} {role} | Class: {cls} | Ready: {ready}\n"
-        await self.send_to_all(status)
+        await show_lobby(self)
 
     async def send_to_all(self, message):
         for p in self.players:
