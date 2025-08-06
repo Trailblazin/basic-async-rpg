@@ -111,34 +111,56 @@ async def lobby_cmds(server, player, reader, writer, show_lobby, handle_disconne
         await handle_disconnect(player)
         return False
     
-async def battle_loop(server,players):
-    #TODO: Once sufficiently complex improvements are made: add method to init 
+async def battle_loop(server):
+    #TODO: Once sufficiently complex improvements are made: create method to init 
     # Both enemy side and player side
     boss = Boss(server.rng_pool)
 
     #Init current HP here only because otherwise unused
     #TODO: When expecting multi-battle user behavior, move this to be per-Player init 
-    for p in players:
+    for p in server.players:
         p.currentHP = p.hp   
 
+    combatants = []    
+
     while boss.is_alive() and any(p.currentHP > 0 for p in players):
-        combatants = players + [boss]
-        combatants.sort(key=lambda x: x.speed, reverse=True)
+        if server.combatants_need_rebuild != 0:
+            combatants = [
+                    p for p in server.players 
+                    if p.name not in server.disconnected_players
+                ] + [boss]
+            combatants.sort(key=lambda x: x.speed, reverse=True)
+            #If init encounter
+            if server.combatants_need_rebuild == -1:
+                print("[DEBUG] Built combatants list due to combat initialisation")
+            else:
+                print("[DEBUG] Rebuilt combatants list due to player reconnect/disconnect.")
+            server.combatants_need_rebuild = 0
+
         await show_encounter(server,combatants)
+
         for combatant in combatants:
             await asyncio.sleep(1.5)
             if combatant.type == "Player":
                 # Skip dead party units
                 if combatant.currentHP <= 0:
-                    #TODO: Should print something here D:
+                    await server.send_to_all(f"{combatant.name} is unable to act!")
+                    continue
+                #TODO: Evaluate if even needed
+                if combatant.name in server.disconnected_players:
+                    print(f"[DEBUG] {combatant.name} has DCed and is within their time-out window.")
                     continue
                 try:
                     await handle_player_combat(server, combatant,boss)
                 except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
                     print(f"[DEBUG] {combatant.name} disconnected mid-turn.")
-
                     # Remove player from active list and mark as disconnected
                     await handle_disconnect_in_battle(server, combatant, boss)
+                    server.combatants_need_rebuild = 1
+            elif combatant.type == "AI":
+                print(f"[DEBUG] {combatant.name} is acting on behalf of {combatant.original_name} during time-out window.")
+                #AI Follows identical enemy to AI but only targets boss char
+                handle_enemy_combat(server,combatant,boss)
             else:
                 await handle_enemy_combat(server,combatant,players)
 

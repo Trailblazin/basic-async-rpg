@@ -24,6 +24,8 @@ AI_NAMES = ["AI_Setro", "AI_Firion", "AI_Refia", "AI_Cecil", "AI_Bartz","AI_Terr
 HOST_ADDR = '127.0.0.1'
 PORT = 8888
 
+combat
+
 # The main RPG server handling players, lobby, and game state
 class RPGServer:
     def __init__(self):
@@ -31,6 +33,9 @@ class RPGServer:
         self.server = None    # Server object
         self.disconnected_players = {}  # Store disconnected players for possible rejoin
         self.rng_pool = RNGPool(pool_size=5, base_seed=935115)
+        #TODO: Find better means to do this such as enum equival
+        # Initialize flag: -1 means init, 0 means no, 1 means rebuild
+        self.combatants_need_rebuild = -1
 
     async def start(self):
         # Start the asyncio server on localhost:8888

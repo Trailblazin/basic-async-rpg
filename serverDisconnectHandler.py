@@ -1,7 +1,7 @@
 from serverHelpers import reassign_host
+from playerAI import AIPlayer
 
 async def disconnect_msg(server,player, message=""):
-    server.players.remove(player)
     await server.send_to_all(f"{player.name} has disconnected {message}.")
 
 async def exec_disconnect(server,player):
@@ -30,12 +30,10 @@ async def handle_disconnect_in_battle(server, player, boss):
         else:
             ai_name = AI_NAMES.pop(0)
 
-        ai = Player(ai_name, None, is_ai=True)
-        ai.set_class(player.class_name)
+        ai = AIPlayer(player.name, player.class_name, ai_name)
         ai.ready = True
         ai.currentHP = player.currentHP
         server.players.append(ai)
-
         await server.send_to_all(f"{ai.name} has replaced {player.name} as an AI.")
         print(f"[DEBUG] {ai.name} inserted into battle with {ai.currentHP} HP.")
 
@@ -52,20 +50,21 @@ def schedule_disconnect_cleanup(server, player_name):
         if player_name in server.disconnected_players:
             # _ means we ignore reconnect cleanup task
             player, _ = server.disconnected_players[player_name]
+            server.players.remove(player)
             print(f"[DEBUG] Cleanup: player {player_name} did not reconnect in time.")
             # Remove AI if exists and cleanup player data
             ai_to_remove = None
             for p in server.players:
-                if p.is_ai and p.class_name == player.class_name:
+                if p.is_ai and p.original_name == player_name:
                     ai_to_remove = p
                     break
             if ai_to_remove:
-                self.players.remove(ai_to_remove)
+                server.players.remove(ai_to_remove)
                 print(f"[DEBUG] Removed AI {ai_to_remove.name} after timeout.")
 
-            del self.disconnected_players[player_name]
+            del server.disconnected_players[player_name]
             # Optionally notify remaining players
-            await self.send_to_all(f"Player {player_name} failed to reconnect and has been removed.")
+            await server.send_to_all(f"Player {player_name} failed to reconnect and has been removed.")
 
     task = asyncio.create_task(cleanup())
     return task

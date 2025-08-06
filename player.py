@@ -20,7 +20,7 @@ class Player:
         self.writer = writer                 # Writer stream to communicate with client
         self.is_host = False                 # Host flag
         self.is_ai = is_ai                   # AI player flag
-        self.type = "Player"
+        self.type = "Player" if not is_ai else "AI"
 
     def set_class(self, class_name):
         # Set player's class and corresponding stats
