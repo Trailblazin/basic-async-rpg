@@ -65,7 +65,7 @@ async def client_init(server,reader,writer,player):
 async def battle_loop(server,players):
     #TODO: Once sufficiently complex improvements are made: add method to init 
     # Both enemy side and player side
-    boss = Boss()
+    boss = Boss(server.rng_pool)
     for p in players:
         p.currentHP = p.hp   
     while boss.is_alive() and any(p.currentHP > 0 for p in players):

@@ -3,6 +3,7 @@ import random
 from player import Player
 from serverHandler import client_init, handle_disconnect, show_lobby, show_party, battle_loop
 from playerUtil import get_unused_classes
+from serverRngPool import RNGPool
 
 # Maximum number of players in the game
 MAX_PLAYERS = 4
@@ -29,6 +30,7 @@ class RPGServer:
         self.players = []     # List of all current players (real and AI)
         self.server = None    # Server object
         self.disconnected_players = {}  # Store disconnected players for possible rejoin
+        self.rng_pool = RNGPool(pool_size=5, base_seed=935115)
 
     async def start(self):
         # Start the asyncio server on localhost:8888
