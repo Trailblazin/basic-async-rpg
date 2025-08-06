@@ -32,6 +32,7 @@ async def client_init(server,reader,writer,player):
         if name in server.disconnected_players:
             player = server.disconnected_players.pop(name)
             player.writer = writer
+            #Get all human players in player list
             server.players = [p for p in server.players if p.name != name or p.is_ai]
             server.players.append(player)
             await server.send_to_all(f"{name} has rejoined the game.")
@@ -62,6 +63,52 @@ async def client_init(server,reader,writer,player):
         if player is not None:
             await handle_disconnect(server, player)
         
+async def class_selection(player, reader, writer, players):
+    try:
+        while not player.class_name:
+            line = await asyncio.wait_for(reader.readline(), timeout=60.0)
+            if not line:
+                raise ConnectionResetError
+            class_choice = line.decode().strip()
+
+            # Require that players pick unique classes
+            taken_classes = [p.class_name for p in players if p.class_name]
+            if class_choice in CLASS_STATS and class_choice not in taken_classes:
+                player.set_class(class_choice)
+                writer.write(f"Class set to {class_choice}\n".encode())
+            else:
+                writer.write(b"Invalid or already taken class. Try again: \n")
+            await writer.drain()
+        return True
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
+        return False
+
+async def lobby_cmds(server, player, reader, writer, show_lobby, handle_disconnect):
+    try:
+        while True:
+            line = await asyncio.wait_for(reader.readline(), timeout=180.0)
+            if not line:
+                raise ConnectionResetError
+            msg = line.decode().strip()
+            if msg == "/ready":
+                player.ready = True
+                await server.send_to_all(f"{player.name} is ready.")
+                await show_lobby()
+            elif msg == "/start" and player.is_host:
+                if server.ready_to_start():
+                    await server.start_battle()
+                    break
+                else:
+                    writer.write(b"Not all players are ready or not enough players.\n")
+                    await writer.drain()
+            else:
+                writer.write(b"Unknown command. Type /ready or /start (host only).\n")
+                await writer.drain()
+        return True
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
+        await handle_disconnect(player)
+        return False
+    
 async def battle_loop(server,players):
     #TODO: Once sufficiently complex improvements are made: add method to init 
     # Both enemy side and player side

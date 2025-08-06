@@ -1,7 +1,7 @@
 import asyncio
 import random
 from player import Player
-from serverHandler import client_init, handle_disconnect, show_lobby, show_party, battle_loop
+from serverHandler import await_class_selection, await_lobby_commands, client_init, handle_disconnect, show_lobby, show_party, battle_loop
 from playerUtil import get_unused_classes
 from serverRngPool import RNGPool
 
@@ -45,49 +45,17 @@ class RPGServer:
         await client_init(self, reader, writer,player)
 
     async def handle_player_session(self, player, reader):
-        # Handle input commands from a player
-        writer = player.writer
-        writer.write(b"Choose your class (Thief, Warrior, White Mage, Black Mage): \n")
-        await writer.drain()
-
-        try:
-            #Await player input for class selection
-            while not player.class_name:
-                line = await asyncio.wait_for(reader.readline(), timeout=60.0)
-                if not line:
-                    raise ConnectionResetError
-                class_choice = line.decode().strip()
-                # Require that players pick unique classes
-                if class_choice in CLASS_STATS and class_choice not in [p.class_name for p in self.players if p.class_name]:
-                    player.set_class(class_choice)
-                    writer.write(f"Class set to {class_choice}\n".encode())
-                else:
-                    writer.write(b"Invalid or already taken class. Try again: \n")
-                await writer.drain()
-
-            await show_lobby(self)
-
-            while True:
-                line = await asyncio.wait_for(reader.readline(), timeout=180.0)
-                if not line:
-                    raise ConnectionResetError
-                msg = line.decode().strip()
-                if msg == "/ready":
-                    player.ready = True
-                    await self.send_to_all(f"{player.name} is ready.")
-                    await show_lobby(self)
-                elif msg == "/start" and player.is_host:
-                    if self.ready_to_start():
-                        await self.start_battle()
-                        break
-                    else:
-                        writer.write(b"Not all players are ready or not enough players.\n")
-                        await writer.drain()
-                else:
-                    writer.write(b"Unknown command. Type /ready or /start (host only).\n")
-                    await writer.drain()
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
-            await handle_disconnect(self, player)
+        
+        is_valid_class = await class_selection(player, reader, writer, self.players)
+        if not is_valid_class:
+            await self.handle_disconnect(player)
+            return
+        
+        await show_lobby(self)
+        
+        lobby_commands_success = await lobby_cmds(self, player, reader, writer, show_lobby=lambda: show_lobby(self), handle_disconnect=lambda p=player: self.handle_disconnect(p))
+        if not lobby_commands_success:
+            return
 
     def ready_to_start(self):
         return len(self.players) <= MAX_PLAYERS and all(p.ready for p in self.players)
