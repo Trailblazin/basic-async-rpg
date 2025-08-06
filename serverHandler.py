@@ -1,6 +1,7 @@
 import asyncio
 from player import Player
 from boss import Boss
+from serverDisconnectHandler import handle_disconnect, schedule_disconnect_cleanup
 
 # Maximum number of players in the game
 MAX_PLAYERS = 4
@@ -29,13 +30,14 @@ async def client_init(server,reader,writer,player):
         name = name.decode().strip()
 
         # Rejoining scenario
-        if name in server.disconnected_players:
-            player = server.disconnected_players.pop(name)
-            player.writer = writer
-            #Get all human players in player list
-            server.players = [p for p in server.players if p.name != name or p.is_ai]
-            server.players.append(player)
-            await server.send_to_all(f"{name} has rejoined the game.")
+        if name in self.disconnected_players:
+            if self.in_battle:
+                reconnected = await handle_reconnect_in_battle(self, name, writer)
+            else:
+                reconnected = await handle_reconnect_in_lobby(self, name, writer)
+            if reconnected:
+                # Proceed with whatever post-reconnect flow you want, e.g. skip class select
+                return
         # Server is full, reject player connection
         elif len([p for p in server.players if not p.is_ai]) == MAX_PLAYERS:
             writer.write(b"Server full. Try again later.\n")
@@ -147,38 +149,6 @@ async def handle_player_combat(server,player, enemy):
         return
     target.currentHP -= player.atk
     await server.send_to_all(f"{player.name} attacks {target.name} for {player.atk} damage!")
-
-
-async def handle_disconnect(server, player):
-    # Handle player disconnection and substitution with AI
-    # TODO: Extend to maintain expected functionality if player disconnects mid combat
-    if player in server.players:
-        server.players.remove(player)
-        await server.send_to_all(f"{player.name} has disconnected.")
-
-    server.disconnected_players[player.name] = player
-
-    # Create new AI using existing player class
-    # FIXME: Make sure once extended for midcombat, AI char is not healed
-    if player.class_name:
-        ai_name = AI_NAMES.pop(0)
-        ai = Player(ai_name, None, is_ai=True)
-        ai.set_class(player.class_name)
-        ai.ready = True
-        server.players.append(ai)
-        print(f"[DEBUG] {ai.name} (AI) created to replace {player.name} with class {player.class_name}.")
-        await server.send_to_all(f"{ai.name} has replaced {player.name} as an AI.")
-
-    #Set next human player to be host
-    if player.is_host:
-        for p in server.players:
-            if not p.is_ai:
-                p.is_host = True
-                print(f"[DEBUG] {p.name} promoted to host.")
-                await server.send_to_all(f"{p.name} is now the host.")
-                break
-    await show_lobby(server)
-
 
 async def show_lobby(server):
     status = "\n--- Lobby ---\n"
