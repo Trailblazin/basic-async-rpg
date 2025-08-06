@@ -17,6 +17,9 @@ CLASS_STATS = {
 # Predefined names for AI players
 AI_NAMES = ["AI_Setro", "AI_Firion", "AI_Refia", "AI_Cecil", "AI_Bartz","AI_Terra", "AI_Vincent", "AI_Zell", "AI_Eiko", "AI_Auron","AI_Balthier", "AI_Serah","AI_Noctis_Lucius_Caelum"]
 
+#TODO: Refactor further to have serverCombatHandler, serverChatHandler, 
+# serverLobbyHandler (Inherits from server chat handler), 
+# serverCombatEventHandler
 
 async def client_init(server,reader,writer,player):
     try:
@@ -53,45 +56,50 @@ async def client_init(server,reader,writer,player):
         await server.handle_player_session(player, reader)
 
     except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
-        print(f"Client {addr} disconnected or failed to respond.")
+        #TODO: Consider usage of this "extra info"
+        print(f"Client {writer.get_extra_info('peername')} disconnected or failed to respond.")
     finally:
         if player is not None:
             await handle_disconnect(server, player)
         
-async def battle_loop(players):
-    #TODO: Once sufficiently complex improvements are made: add method to init enemy side
+async def battle_loop(server,players):
+    #TODO: Once sufficiently complex improvements are made: add method to init 
+    # Both enemy side and player side
     boss = Boss()
+    for p in players:
+        p.currentHP = p.hp   
     while boss.is_alive() and any(p.currentHP > 0 for p in players):
         combatants = players + [boss]
         combatants.sort(key=lambda x: x.speed, reverse=True)
+        await show_encounter(server,combatants)
         for combatant in combatants:
             await asyncio.sleep(1.5)
-            if combatant.type == "player":
-                handle_player_combat(combatant,boss)
+            if combatant.type == "Player":
+                await handle_player_combat(server, combatant,boss)
             else:
-                handle_enemy_combat(combatant,players)
+                await handle_enemy_combat(server,combatant,players)
 
     await asyncio.sleep(2)
-    outcome = "Victory!" if boss.hp <= 0 else "Defeat!"
-    await self.send_to_all(f"\n--- {outcome} ---\n")
+    outcome = "Victory!" if not boss.is_alive() else "Defeat!"
+    await server.send_to_all(f"\n--- {outcome} ---\n")
     await asyncio.sleep(2)
 
-async def handle_enemy_combat(enemy,players):
-    target = enemy.select_target(self.players)
-    damage = combatant.atk
+async def handle_enemy_combat(server, enemy,players):
+    target = enemy.select_target(players)
+    damage = enemy.atk
     target.currentHP -= damage
-    await s.send_to_all(f"{combatant.name} attacks {target.name} for {damage} damage!")
+    await server.send_to_all(f"{enemy.name} attacks {target.name} for {damage} damage!")
     if target.currentHP <= 0:
-        await self.send_to_all(f"{target.name} has fallen!")
+        await server.send_to_all(f"{target.name} has fallen!")
     return 0
 
-async def handle_player_combat(player, enemy):
+async def handle_player_combat(server,player, enemy):
     #TODO: Change to get/sets
     target = enemy
-    if player.current_hp <= 0:
+    if player.currentHP <= 0:
         return
-    target.hp -= player.atk
-    await self.send_to_all(f"{player.name} attacks {tagrget.name} for {player.atk} damage!")
+    target.currentHP -= player.atk
+    await server.send_to_all(f"{player.name} attacks {target.name} for {player.atk} damage!")
 
 
 async def handle_disconnect(server, player):
@@ -139,4 +147,12 @@ async def show_party(server):
         job = p.class_name
         ready = "✓" if p.ready else "✗"
         status += f"{p.name} {role} | Class: {job} \n"
+    await server.send_to_all(status)
+
+async def show_encounter(server,combatants):
+    status = "\n--- Encounter Info ---\n"
+    for c in combatants:
+        role = "[BOSS]" if c.type == "Boss" else "[PARTY]"
+        hp = c.currentHP
+        status += f"{role} {c.name} | HP: {hp} \n"
     await server.send_to_all(status)

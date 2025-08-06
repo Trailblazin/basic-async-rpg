@@ -38,8 +38,6 @@ class RPGServer:
             await self.server.serve_forever()
 
     async def handle_client_init(self, reader, writer):
-        # Handle a new player connection
-        addr = writer.get_extra_info('peername')
         # Init temp player object
         player = Player(None,None)
         await client_init(self, reader, writer,player)
@@ -105,7 +103,7 @@ class RPGServer:
         await self.send_to_all("\n--- Battle Starting! ---\n")
         await asyncio.sleep(2)
         await self.send_to_all("\n--- [Battle phase: Begins!] ---\n")
-        await battle_loop(self.players)
+        await battle_loop(self, self.players)
         await self.send_to_all("\nGame over! Returning to lobby...\n")
 
         #De-ready players and prepare to reset lobby
@@ -118,6 +116,8 @@ class RPGServer:
         self.players = [p for p in self.players if not p.is_ai]
         self.disconnected_players.clear()
         await show_lobby(self)
+
+    #TODO: Consider moving to serverHandler 
 
     async def send_to_all(self, message):
         for p in self.players:
