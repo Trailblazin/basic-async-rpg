@@ -1,8 +1,8 @@
 from serverHelpers import reassign_host
 
-async def disconnect_msg(server,player):
+async def disconnect_msg(server,player, message=""):
     server.players.remove(player)
-    await server.send_to_all(f"{player.name} has disconnected.")
+    await server.send_to_all(f"{player.name} has disconnected {message}.")
 
 async def exec_disconnect(server,player):
     cleanup_task = asyncio.create_task(schedule_disconnect_cleanup(server, player.name, timeout=300))  # e.g., 5 mins
@@ -20,17 +20,24 @@ async def handle_disconnect_lobby(server, player):
 
 async def handle_disconnect_in_battle(server, player, boss):
 
-    disconnect_msg(server,player)
+    disconnect_msg(server,player,message="during combat")
     exec_disconnect(server,player)
 
     # Spawn AI replacement for battle continuity
     if player.class_name:
-        ai_name = AI_NAMES.pop(0)
+        if not AI_NAMES:
+            ai_name = f"AI_{player.name}"
+        else:
+            ai_name = AI_NAMES.pop(0)
+
         ai = Player(ai_name, None, is_ai=True)
         ai.set_class(player.class_name)
         ai.ready = True
+        ai.currentHP = player.currentHP
         server.players.append(ai)
+
         await server.send_to_all(f"{ai.name} has replaced {player.name} as an AI.")
+        print(f"[DEBUG] {ai.name} inserted into battle with {ai.currentHP} HP.")
 
     # Reassign host if needed
     if player.is_host:

@@ -115,8 +115,12 @@ async def battle_loop(server,players):
     #TODO: Once sufficiently complex improvements are made: add method to init 
     # Both enemy side and player side
     boss = Boss(server.rng_pool)
+
+    #Init current HP here only because otherwise unused
+    #TODO: When expecting multi-battle user behavior, move this to be per-Player init 
     for p in players:
         p.currentHP = p.hp   
+
     while boss.is_alive() and any(p.currentHP > 0 for p in players):
         combatants = players + [boss]
         combatants.sort(key=lambda x: x.speed, reverse=True)
@@ -124,7 +128,17 @@ async def battle_loop(server,players):
         for combatant in combatants:
             await asyncio.sleep(1.5)
             if combatant.type == "Player":
-                await handle_player_combat(server, combatant,boss)
+                # Skip dead party units
+                if combatant.currentHP <= 0:
+                    #TODO: Should print something here D:
+                    continue
+                try:
+                    await handle_player_combat(server, combatant,boss)
+                except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionResetError):
+                    print(f"[DEBUG] {combatant.name} disconnected mid-turn.")
+
+                    # Remove player from active list and mark as disconnected
+                    await handle_disconnect_in_battle(server, combatant, boss)
             else:
                 await handle_enemy_combat(server,combatant,players)
 
@@ -145,8 +159,6 @@ async def handle_enemy_combat(server, enemy,players):
 async def handle_player_combat(server,player, enemy):
     #TODO: Change to get/sets
     target = enemy
-    if player.currentHP <= 0:
-        return
     target.currentHP -= player.atk
     await server.send_to_all(f"{player.name} attacks {target.name} for {player.atk} damage!")
 

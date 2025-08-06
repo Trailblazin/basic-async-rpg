@@ -8,6 +8,7 @@ class Player:
         "Black Mage": {"hp": 60, "atk": 20, "speed": 12},
     }
 
+    #FIXME: Extend to incorperate a reader per client
     def __init__(self, name, writer, is_ai=False):
         self.name = name                      # Player's name
         self.class_name = None               # Chosen class name
