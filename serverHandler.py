@@ -166,6 +166,7 @@ async def handle_disconnect(server, player):
         ai.set_class(player.class_name)
         ai.ready = True
         server.players.append(ai)
+        print(f"[DEBUG] {ai.name} (AI) created to replace {player.name} with class {player.class_name}.")
         await server.send_to_all(f"{ai.name} has replaced {player.name} as an AI.")
 
     #Set next human player to be host
@@ -173,6 +174,7 @@ async def handle_disconnect(server, player):
         for p in server.players:
             if not p.is_ai:
                 p.is_host = True
+                print(f"[DEBUG] {p.name} promoted to host.")
                 await server.send_to_all(f"{p.name} is now the host.")
                 break
     await show_lobby(server)
